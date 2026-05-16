@@ -5,16 +5,18 @@
 pub struct Udp4Event {
     pub src: u32,
     pub dst: u32,
-    pub port: u16,
-    pub _pad: u16,
+    pub src_port: u16,
+    pub dst_port: u16,
+    pub _pad: u32,
 }
 
 impl Udp4Event {
-    pub fn new(src: u32, dst: u32, port: u16) -> Self {
+    pub fn new(src: u32, dst: u32, src_port: u16, dst_port: u16) -> Self {
         Self {
             src,
             dst,
-            port,
+            src_port,
+            dst_port,
             _pad: 0,
         }
     }

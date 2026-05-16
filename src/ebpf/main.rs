@@ -69,13 +69,18 @@ fn try_efence_ebpf(ctx: &XdpContext) -> Result<(), EfenceError> {
     let proto = unsafe { (*ipv4hdr).proto() }
         .map_err(|_| EfenceError::InvalidProtocol)?;
 
-    let source_port = match proto {
+    match proto {
         IpProto::Tcp => (),
         IpProto::Udp => {
             let udphdr: *const UdpHdr =
                 ptr_at(&ctx, EthHdr::LEN + Ipv4Hdr::LEN)?;
-            let port = u16::from_be(unsafe { (*udphdr).src_port() });
-            submit_udp4_event(ctx, Udp4Event::new(src, dst, port));
+            // the src_port() already convert the endian to native.
+            let src_port = unsafe { (*udphdr).src_port() };
+            let dst_port = unsafe { (*udphdr).dst_port() };
+            submit_udp4_event(
+                ctx,
+                Udp4Event::new(src, dst, src_port, dst_port),
+            );
             info!(ctx, "received a UDP packet",);
         }
         _ => (),

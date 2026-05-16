@@ -13,6 +13,7 @@ anyhow = { workspace = true, default-features = true }
 aya = { workspace = true }
 aya-log = { workspace = true }
 env_logger = { workspace = true }
+efence = { path = "../lib_nostd" }
 libc = { workspace = true }
 log = { workspace = true }
 tokio = { workspace = true, features = [
