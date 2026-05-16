@@ -1,0 +1,16 @@
+[package]
+name = "efcli"
+version.workspace = true
+authors.workspace = true
+description = "Efence CLI for controlling efenced and inspector"
+documentation.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+tokio = { workspace =true }
+
+[[bin]]
+name = "efcli"
+path = "main.rs"

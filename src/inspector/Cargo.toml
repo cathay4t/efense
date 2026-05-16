@@ -1,0 +1,17 @@
+[package]
+name = "efence-inspector"
+version.workspace = true
+authors.workspace = true
+description = """
+Efence inspector daemon for receiving and processing security events"""
+documentation.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+tokio = { workspace = true }
+
+[[bin]]
+name = "efense-inspector"
+path = "main.rs"

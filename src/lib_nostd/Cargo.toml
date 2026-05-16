@@ -1,0 +1,14 @@
+[package]
+name = "efence"
+version.workspace = true
+authors.workspace = true
+description = "Crate of efense holding shared tools, (no_std)"
+documentation.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+
+[lib]
+path = "lib.rs"
