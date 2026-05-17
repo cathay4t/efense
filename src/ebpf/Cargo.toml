@@ -13,7 +13,7 @@ rust-version.workspace = true
 aya-ebpf = { workspace = true }
 aya-log-ebpf = { workspace = true }
 network-types = { workspace = true }
-efence = { path = "../lib_nostd" }
+efence_core = { path = "../lib_nostd" }
 
 [build-dependencies]
 which = { workspace = true }

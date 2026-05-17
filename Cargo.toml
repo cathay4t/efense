@@ -1,26 +1,23 @@
 [workspace]
 resolver = "2"
 members = [
-    "src/daemon",
+    "src/cli",
     "src/ebpf",
     "src/lib_nostd",
-#    "src/cli",
-#    "src/inspector",
+    "src/lib",
 ]
-default-members = ["src/daemon", "src/lib_nostd"]
+default-members = ["src/cli", "src/lib_nostd"]
 
 [workspace.package]
 version = "0.1.0"
-authors = ["Gris Ge"]
-description = "Linux daemon for security monitor and protection"
+authors = ["Gris Ge <cnfourt@gmail.com>"]
+description = "Linux tool for security monitor and protection"
 documentation = "https://github.com/cathay4t/efence"
 edition = "2024"
 license = "Apache 2.0"
 rust-version = "1.88"
 
 [workspace.dependencies]
-anyhow = { version = "1", default-features = false }
-
 aya = { git = "https://github.com/aya-rs/aya", default-features = false }
 aya-build = { git = "https://github.com/aya-rs/aya", default-features = false }
 aya-ebpf = { git = "https://github.com/aya-rs/aya", default-features = false }

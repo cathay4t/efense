@@ -1,14 +1,15 @@
 [package]
-name = "efence_core"
+name = "efence"
 version.workspace = true
 authors.workspace = true
-description = "Crate of efense holding shared tools, (no_std)"
+description = "Crate of efense holding shared tools, (with_std)"
 documentation.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+aya = { workspace = true }
 
 [lib]
 path = "lib.rs"

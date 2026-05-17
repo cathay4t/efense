@@ -1,1 +1,4 @@
- * Support action(reboot or invoke dispatch script) if daemon stoped/crashed
+ * Support customize action(reboot or invoke dispatch script) if daemon
+   stoped/crashed
+ * Allow daemon to send out securty events via gRPC for performance and securty
+   concern.

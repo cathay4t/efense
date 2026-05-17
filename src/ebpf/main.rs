@@ -10,7 +10,7 @@ use aya_ebpf::{
     programs::XdpContext,
 };
 use aya_log_ebpf::{info, warn};
-use efence::{EfenceErrorCode, UDP4_EVENTS_BATCH_SIZE, Udp4Event};
+use efence_core::{EfenceErrorCode, UDP4_EVENTS_BATCH_SIZE, Udp4Event};
 use network_types::{
     eth::{EthHdr, EtherType},
     ip::{IpProto, Ipv4Hdr},
