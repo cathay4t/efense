@@ -10,7 +10,7 @@ use aya_ebpf::{
     programs::XdpContext,
 };
 use aya_log_ebpf::{info, warn};
-use efence_core::{EfenceErrorCode, UDP4_EVENTS_BATCH_SIZE, Udp4Event};
+use efence_core::{EfenceErrorCode, UDP4_EVENTS_RING_BUF_SIZE, Udp4Event};
 use network_types::{
     eth::{EthHdr, EtherType},
     ip::{IpProto, Ipv4Hdr},
@@ -33,9 +33,9 @@ fn ptr_at<T>(
     Ok((start + offset) as *const T)
 }
 
-// Is this 4096 size correct?
+
 #[btf_map]
-static UDP4_EVENTS: RingBuf<Udp4Event, UDP4_EVENTS_BATCH_SIZE, 0> =
+static UDP4_EVENTS: RingBuf<Udp4Event, UDP4_EVENTS_RING_BUF_SIZE, 0> =
     RingBuf::new();
 
 fn submit_udp4_event(ctx: &XdpContext, event: Udp4Event) {
