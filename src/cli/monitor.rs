@@ -1,12 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use std::mem::size_of;
-
 use aya::{
     maps::RingBuf,
     programs::{Xdp, XdpMode},
 };
-use efence::{EfenceError, Udp4Event};
+use efence::{EfenceError, EfenceEvent, Udp4Event};
 use efence_core::Udp4EventRaw;
 #[rustfmt::skip]
 use log::{debug, warn};
@@ -85,10 +83,12 @@ impl CommandMonitor {
                 let mut guard = udp4_events.readable_mut().await.unwrap();
                 let ring_buf = guard.get_inner_mut();
                 while let Some(item) = ring_buf.next() {
-                    match parse_udp4_event(&item) {
-                        Ok(event) => {
-                            if let Ok(s) = serde_yaml::to_string(&[event]) {
-                                println!("{s}");
+                    match Udp4EventRaw::parse(&item) {
+                        Ok(raw) => {
+                            let event = Udp4Event::from(raw);
+                            let ev = EfenceEvent::Udp4Ingress(event);
+                            if let Ok(s) = serde_yaml::to_string(&[ev]) {
+                                print!("{s}");
                             }
                         }
                         Err(e) => warn!("failed to parse UDP4 event: {e}"),
@@ -102,7 +102,7 @@ impl CommandMonitor {
             .get_one::<String>(ARG_IFACE)
             .expect("clap required iface");
         let program: &mut Xdp =
-            ebpf.program_mut("efence_ebpf").unwrap().try_into()?;
+            ebpf.program_mut("efence_udp_ingress").unwrap().try_into()?;
         program.load()?;
         program.attach(iface, XdpMode::default())?;
 
@@ -115,21 +115,4 @@ impl CommandMonitor {
     }
 }
 
-fn parse_udp4_event(bytes: &[u8]) -> Result<Udp4Event, EfenceError> {
-    if bytes.len() != size_of::<Udp4EventRaw>() {
-        return Err(EfenceError::from(format!(
-            "invalid UDP4 event size: got {}, expected {}",
-            bytes.len(),
-            size_of::<Udp4EventRaw>()
-        )));
-    }
 
-    let raw = Udp4EventRaw::new(
-        u32::from_ne_bytes(bytes[0..4].try_into()?),
-        u32::from_ne_bytes(bytes[4..8].try_into()?),
-        u16::from_ne_bytes(bytes[8..10].try_into()?),
-        u16::from_ne_bytes(bytes[10..12].try_into()?),
-    );
-
-    Ok(Udp4Event::from(raw))
-}

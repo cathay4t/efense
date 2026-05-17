@@ -6,6 +6,7 @@
 use aya_ebpf::{
     bindings::xdp_action,
     btf_maps::ring_buf::RingBuf,
+    helpers::bpf_ktime_get_ns,
     macros::{btf_map, xdp},
     programs::XdpContext,
 };
@@ -50,14 +51,14 @@ fn submit_udp4_event(ctx: &XdpContext, event: Udp4EventRaw) {
 }
 
 #[xdp]
-pub fn efence_ebpf(ctx: XdpContext) -> u32 {
-    if let Err(_) = try_efence_ebpf(&ctx) {
+pub fn efence_udp_ingress(ctx: XdpContext) -> u32 {
+    if let Err(_) = try_efence_udp_ingress(&ctx) {
         warn!(&ctx, "error processing packet");
     }
     xdp_action::XDP_PASS
 }
 
-fn try_efence_ebpf(ctx: &XdpContext) -> Result<(), EfenceErrorCode> {
+fn try_efence_udp_ingress(ctx: &XdpContext) -> Result<(), EfenceErrorCode> {
     let ethhdr: *const EthHdr = ptr_at(&ctx, 0)?;
 
     if unsafe { (*ethhdr).ether_type() } != Ok(EtherType::Ipv4) {
@@ -79,9 +80,10 @@ fn try_efence_ebpf(ctx: &XdpContext) -> Result<(), EfenceErrorCode> {
             // the src_port() already convert the endian to native.
             let src_port = unsafe { (*udphdr).src_port() };
             let dst_port = unsafe { (*udphdr).dst_port() };
+            let tstamp = unsafe { bpf_ktime_get_ns() };
             submit_udp4_event(
                 ctx,
-                Udp4EventRaw::new(src, dst, src_port, dst_port),
+                Udp4EventRaw::new(src, dst, src_port, dst_port, tstamp),
             );
             info!(ctx, "received a UDP packet",);
         }
