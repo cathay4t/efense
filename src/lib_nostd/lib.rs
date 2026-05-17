@@ -6,6 +6,6 @@ mod error;
 mod udp;
 
 pub use self::{
-    error::EfenceError,
+    error::EfenceErrorCode,
     udp::{UDP4_EVENTS_BATCH_SIZE, Udp4Event},
 };

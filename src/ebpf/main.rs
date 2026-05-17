@@ -10,7 +10,7 @@ use aya_ebpf::{
     programs::XdpContext,
 };
 use aya_log_ebpf::{info, warn};
-use efence::{EfenceError, UDP4_EVENTS_BATCH_SIZE, Udp4Event};
+use efence::{EfenceErrorCode, UDP4_EVENTS_BATCH_SIZE, Udp4Event};
 use network_types::{
     eth::{EthHdr, EtherType},
     ip::{IpProto, Ipv4Hdr},
@@ -18,13 +18,16 @@ use network_types::{
 };
 
 #[inline(always)]
-fn ptr_at<T>(ctx: &XdpContext, offset: usize) -> Result<*const T, EfenceError> {
+fn ptr_at<T>(
+    ctx: &XdpContext,
+    offset: usize,
+) -> Result<*const T, EfenceErrorCode> {
     let start = ctx.data();
     let end = ctx.data_end();
     let len = core::mem::size_of::<T>();
 
     if start + offset + len > end {
-        return Err(EfenceError::PacketTooSmall);
+        return Err(EfenceErrorCode::PacketTooSmall);
     }
 
     Ok((start + offset) as *const T)
@@ -55,7 +58,7 @@ pub fn efence_ebpf(ctx: XdpContext) -> u32 {
     xdp_action::XDP_PASS
 }
 
-fn try_efence_ebpf(ctx: &XdpContext) -> Result<(), EfenceError> {
+fn try_efence_ebpf(ctx: &XdpContext) -> Result<(), EfenceErrorCode> {
     let ethhdr: *const EthHdr = ptr_at(&ctx, 0)?;
 
     if unsafe { (*ethhdr).ether_type() } != Ok(EtherType::Ipv4) {
@@ -67,7 +70,7 @@ fn try_efence_ebpf(ctx: &XdpContext) -> Result<(), EfenceError> {
     let dst = u32::from_be_bytes(unsafe { (*ipv4hdr).dst_addr });
 
     let proto = unsafe { (*ipv4hdr).proto() }
-        .map_err(|_| EfenceError::InvalidProtocol)?;
+        .map_err(|_| EfenceErrorCode::InvalidProtocol)?;
 
     match proto {
         IpProto::Tcp => (),
