@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use std::borrow::Borrow;
+
 use aya::{
-    maps::RingBuf,
+    maps::{MapData, RingBuf},
     programs::{Xdp, XdpMode},
 };
-use efence::{EfenceError, EfenceEvent, Udp4Event};
-use efence_core::Udp4EventRaw;
+use efence::{EfenceError, EfenceEvent, Tcp4Event, Udp4Event};
+use efence_core::{Tcp4EventRaw, Udp4EventRaw};
 #[rustfmt::skip]
 use log::{debug, warn};
 use tokio::{io::Interest, signal};
@@ -32,79 +34,23 @@ impl CommandMonitor {
     pub(crate) async fn handle(
         matches: &clap::ArgMatches,
     ) -> Result<(), EfenceError> {
-        // Bump the memlock rlimit. This is needed for older kernels that don't
-        // use the new memcg based accounting, see https://lwn.net/Articles/837122/
-        let rlim = libc::rlimit {
-            rlim_cur: libc::RLIM_INFINITY,
-            rlim_max: libc::RLIM_INFINITY,
-        };
-        let ret = unsafe { libc::setrlimit(libc::RLIMIT_MEMLOCK, &rlim) };
-        if ret != 0 {
-            debug!("remove limit on locked memory failed, ret is: {ret}");
-        }
+        bump_memlock();
+        let mut ebpf = load_ebpf_program()?;
+        init_ebpf_logger(&mut ebpf);
 
-        // Load the eBPF program into buffer and initializes the maps and BTF
-        // from /sys/kernel/btf/vmlinux
-        let mut ebpf = aya::Ebpf::load(aya::include_bytes_aligned!(concat!(
-            env!("OUT_DIR"),
-            "/efence_ebpf_cli" // this is the CLI tool name
-        )))?;
-        match aya_log::EbpfLogger::init(&mut ebpf) {
-            Err(e) => {
-                // This can happen if you remove all log statements from your
-                // eBPF program.
-                warn!("failed to initialize eBPF logger: {e}");
-            }
-            Ok(logger) => {
-                let mut logger = tokio::io::unix::AsyncFd::with_interest(
-                    logger,
-                    tokio::io::Interest::READABLE,
-                )?;
-                tokio::task::spawn(async move {
-                    loop {
-                        let mut guard = logger.readable_mut().await.unwrap();
-                        guard.get_inner_mut().flush();
-                        guard.clear_ready();
-                    }
-                });
-            }
-        }
+        let (ev_tx, ev_rx) = tokio::sync::mpsc::unbounded_channel();
 
-        let ring_buf = ebpf
-            .take_map("UDP4_EVENTS")
-            .ok_or_else(|| EfenceError::from("UDP4_EVENTS map not found"))?;
-        let ring_buf = RingBuf::try_from(ring_buf)?;
-        let mut udp4_events = tokio::io::unix::AsyncFd::with_interest(
-            ring_buf,
-            Interest::READABLE,
-        )?;
-        tokio::task::spawn(async move {
-            loop {
-                let mut guard = udp4_events.readable_mut().await.unwrap();
-                let ring_buf = guard.get_inner_mut();
-                while let Some(item) = ring_buf.next() {
-                    match Udp4EventRaw::parse(&item) {
-                        Ok(raw) => {
-                            let event = Udp4Event::from(raw);
-                            let ev = EfenceEvent::Udp4Ingress(event);
-                            if let Ok(s) = serde_yaml::to_string(&[ev]) {
-                                print!("{s}");
-                            }
-                        }
-                        Err(e) => warn!("failed to parse UDP4 event: {e}"),
-                    }
-                }
-                guard.clear_ready();
-            }
-        });
+        spawn_udp4_task(
+            take_ring_buf(&mut ebpf, "UDP4_EVENTS")?,
+            ev_tx.clone(),
+        );
+        spawn_tcp4_task(take_ring_buf(&mut ebpf, "TCP4_EVENTS")?, ev_tx);
+        spawn_event_printer(ev_rx);
 
         let iface = matches
             .get_one::<String>(ARG_IFACE)
             .expect("clap required iface");
-        let program: &mut Xdp =
-            ebpf.program_mut("efence_udp_ingress").unwrap().try_into()?;
-        program.load()?;
-        program.attach(iface, XdpMode::default())?;
+        attach_xdp_program(&mut ebpf, iface)?;
 
         let ctrl_c = signal::ctrl_c();
         eprintln!("Waiting for Ctrl-C...");
@@ -115,4 +61,129 @@ impl CommandMonitor {
     }
 }
 
+fn bump_memlock() {
+    let rlim = libc::rlimit {
+        rlim_cur: libc::RLIM_INFINITY,
+        rlim_max: libc::RLIM_INFINITY,
+    };
+    let ret = unsafe { libc::setrlimit(libc::RLIMIT_MEMLOCK, &rlim) };
+    if ret != 0 {
+        debug!("remove limit on locked memory failed, ret is: {ret}");
+    }
+}
 
+fn load_ebpf_program() -> Result<aya::Ebpf, EfenceError> {
+    Ok(aya::Ebpf::load(aya::include_bytes_aligned!(concat!(
+        env!("OUT_DIR"),
+        "/efence_ebpf_cli"
+    )))?)
+}
+
+fn init_ebpf_logger(ebpf: &mut aya::Ebpf) {
+    match aya_log::EbpfLogger::init(ebpf) {
+        Err(e) => {
+            warn!("failed to initialize eBPF logger: {e}");
+        }
+        Ok(logger) => {
+            let mut logger = tokio::io::unix::AsyncFd::with_interest(
+                logger,
+                tokio::io::Interest::READABLE,
+            )
+            .expect("Failed to create AsyncFd for logger");
+            tokio::task::spawn(async move {
+                loop {
+                    let mut guard = logger.readable_mut().await.unwrap();
+                    guard.get_inner_mut().flush();
+                    guard.clear_ready();
+                }
+            });
+        }
+    }
+}
+
+fn take_ring_buf(
+    ebpf: &mut aya::Ebpf,
+    name: &str,
+) -> Result<RingBuf<impl Borrow<MapData> + Send + 'static>, EfenceError> {
+    let map = ebpf
+        .take_map(name)
+        .ok_or_else(|| EfenceError::from(format!("{name} map not found")))?;
+    Ok(RingBuf::try_from(map)?)
+}
+
+fn spawn_udp4_task(
+    ring_buf: RingBuf<impl Borrow<MapData> + Send + 'static>,
+    tx: tokio::sync::mpsc::UnboundedSender<EfenceEvent>,
+) {
+    let mut events =
+        tokio::io::unix::AsyncFd::with_interest(ring_buf, Interest::READABLE)
+            .expect("Failed to create AsyncFd for UDP4 ring buffer");
+    tokio::task::spawn(async move {
+        loop {
+            let mut guard = events.readable_mut().await.unwrap();
+            let ring_buf = guard.get_inner_mut();
+            while let Some(item) = ring_buf.next() {
+                match Udp4EventRaw::parse(&item) {
+                    Ok(raw) => {
+                        let event = Udp4Event::from(raw);
+                        let _ = tx.send(EfenceEvent::Udp4Ingress(event));
+                    }
+                    Err(e) => warn!("failed to parse UDP4 event: {e}"),
+                }
+            }
+            guard.clear_ready();
+        }
+    });
+}
+
+fn spawn_tcp4_task(
+    ring_buf: RingBuf<impl Borrow<MapData> + Send + 'static>,
+    tx: tokio::sync::mpsc::UnboundedSender<EfenceEvent>,
+) {
+    let mut events =
+        tokio::io::unix::AsyncFd::with_interest(ring_buf, Interest::READABLE)
+            .expect("Failed to create AsyncFd for TCP4 ring buffer");
+    tokio::task::spawn(async move {
+        loop {
+            let mut guard = events.readable_mut().await.unwrap();
+            let ring_buf = guard.get_inner_mut();
+            while let Some(item) = ring_buf.next() {
+                match Tcp4EventRaw::parse(&item) {
+                    Ok(raw) => {
+                        let event = Tcp4Event::from(raw);
+                        let _ = tx.send(EfenceEvent::Tcp4Ingress(event));
+                    }
+                    Err(e) => warn!("failed to parse TCP4 event: {e}"),
+                }
+            }
+            guard.clear_ready();
+        }
+    });
+}
+
+fn spawn_event_printer(
+    mut rx: tokio::sync::mpsc::UnboundedReceiver<EfenceEvent>,
+) {
+    tokio::task::spawn(async move {
+        while let Some(ev) = rx.recv().await {
+            if let Ok(s) = serde_yaml::to_string(&[ev]) {
+                print!("{s}");
+            }
+        }
+    });
+}
+
+fn attach_xdp_program(
+    ebpf: &mut aya::Ebpf,
+    iface: &str,
+) -> Result<(), EfenceError> {
+    let program: &mut Xdp = ebpf
+        .program_mut("efence_net_ingress")
+        .ok_or_else(|| {
+            EfenceError::from("efence_net_ingress program not found")
+        })?
+        .try_into()?;
+    program.load()?;
+    program.attach(iface, XdpMode::default())?;
+    Ok(())
+}

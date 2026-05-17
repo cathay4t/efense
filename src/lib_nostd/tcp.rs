@@ -2,14 +2,14 @@
 
 #[repr(C)]
 #[derive(Copy, Clone)]
-pub struct Udp4EventRaw {
+pub struct Tcp4EventRaw {
     /// native endianness IPv4 source address.
     pub src: u32,
     /// native endianness IPv4 destination address.
     pub dst: u32,
-    /// native endianness UDP source port.
+    /// native endianness TCP source port.
     pub src_port: u16,
-    /// native endianness UDP destination port.
+    /// native endianness TCP destination port.
     pub dst_port: u16,
     /// Padding to align the struct to 8 bytes for efficient ring buffer
     /// storage.
@@ -18,7 +18,7 @@ pub struct Udp4EventRaw {
     pub timestamp: u64,
 }
 
-impl Udp4EventRaw {
+impl Tcp4EventRaw {
     pub fn new(
         src: u32,
         dst: u32,
@@ -38,7 +38,7 @@ impl Udp4EventRaw {
 
     pub fn parse(bytes: &[u8]) -> Result<Self, &'static str> {
         if bytes.len() != core::mem::size_of::<Self>() {
-            return Err("invalid UDP4 event size");
+            return Err("invalid TCP4 event size");
         }
         Ok(Self {
             src: u32::from_ne_bytes(
@@ -65,4 +65,4 @@ impl Udp4EventRaw {
 
 // Ring buffer byte size, passed as max_entries to the kernel.
 // Must be a power of 2 and page-aligned (multiple of 4096).
-pub const UDP4_EVENTS_RING_BUF_SIZE: usize = 16384;
+pub const TCP4_EVENTS_RING_BUF_SIZE: usize = 16384;

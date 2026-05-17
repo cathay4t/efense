@@ -2,13 +2,17 @@
 
 use std::net::Ipv4Addr;
 
-use efence_core::Udp4EventRaw;
+use efence_core::Tcp4EventRaw;
 use serde::{Deserialize, Serialize};
 
 use crate::event::serialize_timestamp;
 
+/// Represents a TCP event
+///
+/// To eliminate the noise, only trace TCP ACK packet during TCP handshake,
+/// hence each Tcp4Event represents a established TCP connection.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-pub struct Udp4Event {
+pub struct Tcp4Event {
     pub src: Ipv4Addr,
     pub dst: Ipv4Addr,
     pub src_port: u16,
@@ -17,7 +21,7 @@ pub struct Udp4Event {
     pub timestamp: u64,
 }
 
-impl Udp4Event {
+impl Tcp4Event {
     pub fn new(
         src: Ipv4Addr,
         dst: Ipv4Addr,
@@ -35,8 +39,8 @@ impl Udp4Event {
     }
 }
 
-impl From<Udp4EventRaw> for Udp4Event {
-    fn from(raw: Udp4EventRaw) -> Self {
+impl From<Tcp4EventRaw> for Tcp4Event {
+    fn from(raw: Tcp4EventRaw) -> Self {
         Self {
             src: Ipv4Addr::from(raw.src),
             dst: Ipv4Addr::from(raw.dst),

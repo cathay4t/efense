@@ -11,10 +11,14 @@ use aya_ebpf::{
     programs::XdpContext,
 };
 use aya_log_ebpf::{info, warn};
-use efence_core::{EfenceErrorCode, UDP4_EVENTS_RING_BUF_SIZE, Udp4EventRaw};
+use efence_core::{
+    EfenceErrorCode, TCP4_EVENTS_RING_BUF_SIZE, Tcp4EventRaw,
+    UDP4_EVENTS_RING_BUF_SIZE, Udp4EventRaw,
+};
 use network_types::{
     eth::{EthHdr, EtherType},
     ip::{IpProto, Ipv4Hdr},
+    tcp::TcpHdr,
     udp::UdpHdr,
 };
 
@@ -50,8 +54,24 @@ fn submit_udp4_event(ctx: &XdpContext, event: Udp4EventRaw) {
     }
 }
 
+#[btf_map]
+static TCP4_EVENTS: RingBuf<Tcp4EventRaw, TCP4_EVENTS_RING_BUF_SIZE, 0> =
+    RingBuf::new();
+
+fn submit_tcp4_event(ctx: &XdpContext, event: Tcp4EventRaw) {
+    match TCP4_EVENTS.reserve(0) {
+        Some(mut entry) => {
+            entry.write(event);
+            entry.submit(0);
+        }
+        None => {
+            warn!(ctx, "TCP4_EVENTS ring buffer is full, dropping event",);
+        }
+    }
+}
+
 #[xdp]
-pub fn efence_udp_ingress(ctx: XdpContext) -> u32 {
+pub fn efence_net_ingress(ctx: XdpContext) -> u32 {
     if let Err(_) = try_efence_udp_ingress(&ctx) {
         warn!(&ctx, "error processing packet");
     }
@@ -73,7 +93,29 @@ fn try_efence_udp_ingress(ctx: &XdpContext) -> Result<(), EfenceErrorCode> {
         .map_err(|_| EfenceErrorCode::InvalidProtocol)?;
 
     match proto {
-        IpProto::Tcp => (),
+        IpProto::Tcp => {
+            let tcphdr: *const TcpHdr =
+                ptr_at(&ctx, EthHdr::LEN + Ipv4Hdr::LEN)?;
+            let ack = unsafe { (*tcphdr).ack() };
+            let syn = unsafe { (*tcphdr).syn() };
+            if ack != 0 && syn == 0 {
+                let ip_hdr_len = unsafe { (*ipv4hdr).ihl() as u16 * 4 };
+                let tcp_hdr_len = unsafe { (*tcphdr).doff() as u16 * 4 };
+                let ip_tot_len = unsafe { (*ipv4hdr).tot_len() };
+                if ip_tot_len == ip_hdr_len + tcp_hdr_len {
+                    let src_port =
+                        u16::from_be_bytes(unsafe { (*tcphdr).source });
+                    let dst_port =
+                        u16::from_be_bytes(unsafe { (*tcphdr).dest });
+                    let tstamp = unsafe { bpf_ktime_get_ns() };
+                    submit_tcp4_event(
+                        ctx,
+                        Tcp4EventRaw::new(src, dst, src_port, dst_port, tstamp),
+                    );
+                    info!(ctx, "received a TCP handshake ACK packet",);
+                }
+            }
+        }
         IpProto::Udp => {
             let udphdr: *const UdpHdr =
                 ptr_at(&ctx, EthHdr::LEN + Ipv4Hdr::LEN)?;
