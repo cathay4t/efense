@@ -2,15 +2,19 @@
 
 #[repr(C)]
 #[derive(Copy, Clone)]
-pub struct Udp4Event {
+pub struct Udp4EventRaw {
+    /// native endianness IPv4 source address.
     pub src: u32,
+    /// native endianness IPv4 destination address.
     pub dst: u32,
+    /// native endianness UDP source port.
     pub src_port: u16,
+    /// native endianness UDP destination port.
     pub dst_port: u16,
     pub _pad: u32,
 }
 
-impl Udp4Event {
+impl Udp4EventRaw {
     pub fn new(src: u32, dst: u32, src_port: u16, dst_port: u16) -> Self {
         Self {
             src,

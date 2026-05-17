@@ -10,7 +10,7 @@ use aya_ebpf::{
     programs::XdpContext,
 };
 use aya_log_ebpf::{info, warn};
-use efence_core::{EfenceErrorCode, UDP4_EVENTS_RING_BUF_SIZE, Udp4Event};
+use efence_core::{EfenceErrorCode, UDP4_EVENTS_RING_BUF_SIZE, Udp4EventRaw};
 use network_types::{
     eth::{EthHdr, EtherType},
     ip::{IpProto, Ipv4Hdr},
@@ -33,12 +33,11 @@ fn ptr_at<T>(
     Ok((start + offset) as *const T)
 }
 
-
 #[btf_map]
-static UDP4_EVENTS: RingBuf<Udp4Event, UDP4_EVENTS_RING_BUF_SIZE, 0> =
+static UDP4_EVENTS: RingBuf<Udp4EventRaw, UDP4_EVENTS_RING_BUF_SIZE, 0> =
     RingBuf::new();
 
-fn submit_udp4_event(ctx: &XdpContext, event: Udp4Event) {
+fn submit_udp4_event(ctx: &XdpContext, event: Udp4EventRaw) {
     match UDP4_EVENTS.reserve(0) {
         Some(mut entry) => {
             entry.write(event);
@@ -82,7 +81,7 @@ fn try_efence_ebpf(ctx: &XdpContext) -> Result<(), EfenceErrorCode> {
             let dst_port = unsafe { (*udphdr).dst_port() };
             submit_udp4_event(
                 ctx,
-                Udp4Event::new(src, dst, src_port, dst_port),
+                Udp4EventRaw::new(src, dst, src_port, dst_port),
             );
             info!(ctx, "received a UDP packet",);
         }

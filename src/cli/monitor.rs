@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use std::net::Ipv4Addr;
+use std::mem::size_of;
 
 use aya::{
     maps::RingBuf,
     programs::{Xdp, XdpMode},
 };
-use efence::EfenceError;
-use efence_core::Udp4Event;
+use efence::{EfenceError, Udp4Event};
+use efence_core::Udp4EventRaw;
 #[rustfmt::skip]
 use log::{debug, warn};
 use tokio::{io::Interest, signal};
@@ -86,13 +86,11 @@ impl CommandMonitor {
                 let ring_buf = guard.get_inner_mut();
                 while let Some(item) = ring_buf.next() {
                     match parse_udp4_event(&item) {
-                        Ok(event) => println!(
-                            "UDP4 src={} dst={} src_port={} dst_port={}",
-                            Ipv4Addr::from(event.src),
-                            Ipv4Addr::from(event.dst),
-                            event.src_port,
-                            event.dst_port,
-                        ),
+                        Ok(event) => {
+                            if let Ok(s) = serde_yaml::to_string(&[event]) {
+                                println!("{s}");
+                            }
+                        }
                         Err(e) => warn!("failed to parse UDP4 event: {e}"),
                     }
                 }
@@ -118,18 +116,20 @@ impl CommandMonitor {
 }
 
 fn parse_udp4_event(bytes: &[u8]) -> Result<Udp4Event, EfenceError> {
-    if bytes.len() != std::mem::size_of::<Udp4Event>() {
+    if bytes.len() != size_of::<Udp4EventRaw>() {
         return Err(EfenceError::from(format!(
             "invalid UDP4 event size: got {}, expected {}",
             bytes.len(),
-            std::mem::size_of::<Udp4Event>()
+            size_of::<Udp4EventRaw>()
         )));
     }
 
-    let src = u32::from_ne_bytes(bytes[0..4].try_into()?);
-    let dst = u32::from_ne_bytes(bytes[4..8].try_into()?);
-    let src_port = u16::from_ne_bytes(bytes[8..10].try_into()?);
-    let dst_port = u16::from_ne_bytes(bytes[10..12].try_into()?);
+    let raw = Udp4EventRaw::new(
+        u32::from_ne_bytes(bytes[0..4].try_into()?),
+        u32::from_ne_bytes(bytes[4..8].try_into()?),
+        u16::from_ne_bytes(bytes[8..10].try_into()?),
+        u16::from_ne_bytes(bytes[10..12].try_into()?),
+    );
 
-    Ok(Udp4Event::new(src, dst, src_port, dst_port))
+    Ok(Udp4Event::from(raw))
 }
