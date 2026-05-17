@@ -6,7 +6,7 @@ members = [
     "src/lib_nostd",
     "src/lib",
 ]
-default-members = ["src/cli", "src/lib_nostd"]
+default-members = ["src/cli", "src/lib_nostd", "src/lib"]
 
 [workspace.package]
 version = "0.1.0"
@@ -24,7 +24,7 @@ aya-ebpf = { git = "https://github.com/aya-rs/aya", default-features = false }
 aya-log = { git = "https://github.com/aya-rs/aya", default-features = false }
 aya-log-ebpf = { git = "https://github.com/aya-rs/aya", default-features = false }
 
-chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+time = { version = "0.3", default-features = false, features = ["formatting", "parsing", "std"] }
 clap = { version = "4.6.1", default-features = false, features = ["std"] }
 env_logger = { version = "0.11.5", default-features = false }
 libc = { version = "0.2.159", default-features = false }

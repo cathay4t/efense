@@ -14,7 +14,7 @@ pub struct Udp4EventRaw {
     /// Padding to align the struct to 8 bytes for efficient ring buffer
     /// storage.
     pub _pad: u32,
-    /// Kernel timestamp in nanoseconds (from bpf_ktime_get_ns).
+    /// Kernel timestamp in nanoseconds (from bpf_ktime_get_boot_ns).
     pub timestamp: u64,
 }
 

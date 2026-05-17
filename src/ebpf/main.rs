@@ -6,7 +6,7 @@
 use aya_ebpf::{
     bindings::xdp_action,
     btf_maps::ring_buf::RingBuf,
-    helpers::bpf_ktime_get_ns,
+    helpers::bpf_ktime_get_boot_ns,
     macros::{btf_map, xdp},
     programs::XdpContext,
 };
@@ -107,7 +107,7 @@ fn try_efence_udp_ingress(ctx: &XdpContext) -> Result<(), EfenceErrorCode> {
                         u16::from_be_bytes(unsafe { (*tcphdr).source });
                     let dst_port =
                         u16::from_be_bytes(unsafe { (*tcphdr).dest });
-                    let tstamp = unsafe { bpf_ktime_get_ns() };
+                    let tstamp = unsafe { bpf_ktime_get_boot_ns() };
                     submit_tcp4_event(
                         ctx,
                         Tcp4EventRaw::new(src, dst, src_port, dst_port, tstamp),
@@ -122,7 +122,7 @@ fn try_efence_udp_ingress(ctx: &XdpContext) -> Result<(), EfenceErrorCode> {
             // the src_port() already convert the endian to native.
             let src_port = unsafe { (*udphdr).src_port() };
             let dst_port = unsafe { (*udphdr).dst_port() };
-            let tstamp = unsafe { bpf_ktime_get_ns() };
+            let tstamp = unsafe { bpf_ktime_get_boot_ns() };
             submit_udp4_event(
                 ctx,
                 Udp4EventRaw::new(src, dst, src_port, dst_port, tstamp),

@@ -2,40 +2,49 @@
 
 use std::{
     sync::LazyLock,
-    time::{Duration, UNIX_EPOCH},
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use serde::{Deserialize, Serialize};
+use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 
 use crate::{Tcp4Event, Udp4Event};
 
-static BOOT_TO_REALTIME: LazyLock<Duration> = LazyLock::new(|| {
-    let mut mono = std::mem::MaybeUninit::<libc::timespec>::uninit();
-    let mut real = std::mem::MaybeUninit::<libc::timespec>::uninit();
-    unsafe {
-        libc::clock_gettime(libc::CLOCK_MONOTONIC, mono.as_mut_ptr());
-        libc::clock_gettime(libc::CLOCK_REALTIME, real.as_mut_ptr());
-    }
-    let mono = unsafe { mono.assume_init() };
-    let real = unsafe { real.assume_init() };
-    let mono_dur = Duration::new(mono.tv_sec as u64, mono.tv_nsec as u32);
-    let real_dur = Duration::new(real.tv_sec as u64, real.tv_nsec as u32);
-    real_dur - mono_dur
+pub(crate) static BOOT_TIME: LazyLock<SystemTime> = LazyLock::new(|| {
+    std::fs::read_to_string("/proc/stat")
+        .ok()
+        .and_then(|s| {
+            s.lines().find_map(|line| {
+                line.strip_prefix("btime ")
+                    .and_then(|rest| rest.split_whitespace().next())
+                    .and_then(|value| value.parse::<u64>().ok())
+            })
+        })
+        .map(|secs| UNIX_EPOCH + Duration::from_secs(secs))
+        .unwrap_or(UNIX_EPOCH)
 });
 
 pub(crate) fn serialize_timestamp<S: serde::Serializer>(
-    mono_ns: &u64,
+    ts: &Duration,
     serializer: S,
 ) -> Result<S::Ok, S::Error> {
-    let wall = UNIX_EPOCH + *BOOT_TO_REALTIME + Duration::from_nanos(*mono_ns);
-    let dur = wall.duration_since(UNIX_EPOCH).unwrap();
-    let dt = chrono::DateTime::from_timestamp(
-        dur.as_secs() as i64,
-        dur.subsec_nanos(),
-    )
-    .unwrap()
-    .with_timezone(&chrono::Local);
-    serializer.collect_str(&dt.format("%Y-%m-%dT%H:%M:%S%:z"))
+    let utc_dt = OffsetDateTime::from(UNIX_EPOCH + *ts);
+    let formatted =
+        utc_dt.format(&Rfc3339).map_err(serde::ser::Error::custom)?;
+    serializer.serialize_str(&formatted)
+}
+
+pub(crate) fn deserialize_timestamp<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Duration, D::Error> {
+    use serde::Deserialize;
+    let s = String::deserialize(deserializer)?;
+    let dt = OffsetDateTime::parse(&s, &Rfc3339)
+        .map_err(serde::de::Error::custom)?;
+    let wall_clock = SystemTime::from(dt);
+    wall_clock
+        .duration_since(UNIX_EPOCH)
+        .map_err(|_| serde::de::Error::custom("timestamp before UNIX_EPOCH"))
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -45,4 +54,70 @@ pub enum EfenceEvent {
     Udp4Ingress(Udp4Event),
     #[serde(rename = "tcp4_ingress")]
     Tcp4Ingress(Tcp4Event),
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{net::Ipv4Addr, time::Duration};
+
+    use super::BOOT_TIME;
+    use crate::{EfenceEvent, Tcp4Event, Udp4Event};
+
+    #[test]
+    fn serialize_deserialize_udp_event() {
+        let udp = Udp4Event::new(
+            Ipv4Addr::new(10, 0, 0, 1),
+            Ipv4Addr::new(192, 168, 1, 1),
+            12345,
+            80,
+            BOOT_TIME
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                + Duration::from_nanos(1_000_000_000_001),
+        );
+        let event = EfenceEvent::Udp4Ingress(udp);
+
+        let json = serde_json::to_string(&event).unwrap();
+        let deserialized: EfenceEvent = serde_json::from_str(&json).unwrap();
+
+        match deserialized {
+            EfenceEvent::Udp4Ingress(d) => {
+                assert_eq!(d.src, udp.src);
+                assert_eq!(d.dst, udp.dst);
+                assert_eq!(d.src_port, udp.src_port);
+                assert_eq!(d.dst_port, udp.dst_port);
+                assert_eq!(d.timestamp, udp.timestamp);
+            }
+            _ => panic!("expected Udp4Ingress"),
+        }
+    }
+
+    #[test]
+    fn serialize_deserialize_tcp_event() {
+        let tcp = Tcp4Event::new(
+            Ipv4Addr::new(10, 0, 0, 2),
+            Ipv4Addr::new(192, 168, 1, 2),
+            54321,
+            443,
+            BOOT_TIME
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                + Duration::from_nanos(2_000_000_000_002),
+        );
+        let event = EfenceEvent::Tcp4Ingress(tcp);
+
+        let json = serde_json::to_string(&event).unwrap();
+        let deserialized: EfenceEvent = serde_json::from_str(&json).unwrap();
+
+        match deserialized {
+            EfenceEvent::Tcp4Ingress(d) => {
+                assert_eq!(d.src, tcp.src);
+                assert_eq!(d.dst, tcp.dst);
+                assert_eq!(d.src_port, tcp.src_port);
+                assert_eq!(d.dst_port, tcp.dst_port);
+                assert_eq!(d.timestamp, tcp.timestamp);
+            }
+            _ => panic!("expected Tcp4Ingress"),
+        }
+    }
 }

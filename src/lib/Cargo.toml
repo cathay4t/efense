@@ -10,10 +10,12 @@ rust-version.workspace = true
 
 [dependencies]
 aya = { workspace = true }
-chrono = { workspace = true }
 efence_core = { path = "../lib_nostd" }
-libc = { workspace = true }
 serde = { workspace = true, features = ["derive", "std"] }
+time = { workspace = true }
+
+[dev-dependencies]
+serde_json = "1"
 
 [lib]
 path = "lib.rs"
