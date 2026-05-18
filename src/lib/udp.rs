@@ -8,7 +8,34 @@ use std::{
 use efence_core::Udp4EventRaw;
 use serde::{Deserialize, Serialize};
 
-use crate::event::{BOOT_TIME, deserialize_timestamp, serialize_timestamp};
+use crate::{
+    config::Action,
+    event::{BOOT_TIME, deserialize_timestamp, serialize_timestamp},
+    ip::Ipv4Cidr,
+};
+
+/// Policy for UDP ingress on a single interface.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UdpIngressPolicy {
+    pub default_action: Action,
+    #[serde(default)]
+    pub allow_list: Vec<Udp4IngressRule>,
+}
+
+/// A single rule entry inside a UDP ingress `allow_list`.
+///
+/// Either `src_ip`, `src_port`, or both may be present. A missing
+/// `src_ip` is treated as `0.0.0.0/0` (match any source address); a
+/// missing `src_port` is treated as "any source port" for the matched
+/// prefix.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Udp4IngressRule {
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub src_ip: Option<Ipv4Cidr>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub src_port: Option<u16>,
+}
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct Udp4Event {
@@ -56,3 +83,32 @@ impl From<Udp4EventRaw> for Udp4Event {
         }
     }
 }
+
+/// `#[repr(transparent)]` userspace POD wrapper over
+/// [`efence_core::PrefixPort`].
+///
+/// See [`crate::Ipv4CidrPod`] for the rationale: the orphan rule forbids
+/// implementing [`aya::Pod`] directly on a type defined in `efence_core`,
+/// so we wrap it. `repr(transparent)` keeps the wire layout identical
+/// to the wrapped type.
+#[repr(transparent)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+pub struct PrefixPortPod(pub efence_core::PrefixPort);
+
+impl From<efence_core::PrefixPort> for PrefixPortPod {
+    fn from(v: efence_core::PrefixPort) -> Self {
+        Self(v)
+    }
+}
+
+impl From<PrefixPortPod> for efence_core::PrefixPort {
+    fn from(v: PrefixPortPod) -> Self {
+        v.0
+    }
+}
+
+// SAFETY: `efence_core::PrefixPort` is `#[repr(C)]` with only `Copy`
+// integer / nested-POD fields plus explicit `_pad` bytes (so there is
+// no implicit padding), and is `'static`. The wrapper adds nothing
+// thanks to `repr(transparent)`.
+unsafe impl aya::Pod for PrefixPortPod {}

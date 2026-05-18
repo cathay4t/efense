@@ -37,6 +37,17 @@ impl fmt::Display for EfenceError {
     }
 }
 
+fn format_error_chain<E: Error + ?Sized>(e: &E) -> String {
+    let mut s = e.to_string();
+    let mut src = e.source();
+    while let Some(inner) = src {
+        s.push_str(": ");
+        s.push_str(&inner.to_string());
+        src = inner.source();
+    }
+    s
+}
+
 impl Error for EfenceError {}
 
 impl From<io::Error> for EfenceError {
@@ -52,7 +63,7 @@ impl From<aya::EbpfError> for EfenceError {
     fn from(e: aya::EbpfError) -> Self {
         EfenceError {
             kind: ErrorKind::Ebpf,
-            msg: e.to_string(),
+            msg: format_error_chain(&e),
         }
     }
 }
@@ -61,7 +72,7 @@ impl From<aya::maps::MapError> for EfenceError {
     fn from(e: aya::maps::MapError) -> Self {
         EfenceError {
             kind: ErrorKind::Map,
-            msg: e.to_string(),
+            msg: format_error_chain(&e),
         }
     }
 }
@@ -70,7 +81,25 @@ impl From<aya::programs::ProgramError> for EfenceError {
     fn from(e: aya::programs::ProgramError) -> Self {
         EfenceError {
             kind: ErrorKind::Program,
-            msg: e.to_string(),
+            msg: format_error_chain(&e),
+        }
+    }
+}
+
+impl From<aya::pin::PinError> for EfenceError {
+    fn from(e: aya::pin::PinError) -> Self {
+        EfenceError {
+            kind: ErrorKind::Program,
+            msg: format_error_chain(&e),
+        }
+    }
+}
+
+impl From<aya::programs::links::LinkError> for EfenceError {
+    fn from(e: aya::programs::links::LinkError) -> Self {
+        EfenceError {
+            kind: ErrorKind::Program,
+            msg: format_error_chain(&e),
         }
     }
 }

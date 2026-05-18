@@ -178,9 +178,9 @@ fn attach_xdp_program(
     iface: &str,
 ) -> Result<(), EfenceError> {
     let program: &mut Xdp = ebpf
-        .program_mut("efence_net_ingress")
+        .program_mut("efence_net_ingress_monitor")
         .ok_or_else(|| {
-            EfenceError::from("efence_net_ingress program not found")
+            EfenceError::from("efence_net_ingress_monitor program not found")
         })?
         .try_into()?;
     program.load()?;

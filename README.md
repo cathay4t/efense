@@ -4,6 +4,10 @@
 
 Efense is a Linux tool for security monitor and protection.
 
+## Features
+ * eBPF based high performance, low overhead monitoring and protection
+ * No daemon, no leftover thread
+
 ## Goals
  * UDP drop/rate-control/redirect
  * TCP SYNC flood protection
@@ -13,34 +17,34 @@ Efense is a Linux tool for security monitor and protection.
 
 ## Usage
 
-### Query loaded rules
-
 ```
-efctl show
-```
+# Query loaded rules
+cargo run -- show
 
-### Monitor
+# Monitor security events in real time
+cargo run -- monitor
 
-```
-efctl monitor
-```
+# Apply config
+cargo run -- apply <config_file>
 
-### Generate rules for legal events
-
-```
-efctl gen-allow <event_dump_file>
+# Purge all config
+cargo run -- purge
 ```
 
-### Inspect security breaches
+## Example
 
-```
-efctl inspect <event_dump_file>
-```
+### Only allow UDP DNS server from 192.168.122.0/24 via enp2s0
 
-### Apply config
-
-```
-efctl apply <config_file>
+```bash
+echo '---
+interfaces:
+  - name: enp2s0
+    udp_ingress:
+      default_action: drop
+      allow_list:
+      - name: allow_dns_query
+        src_ip: 192.168.122.0/24
+        src_port: 53' | cargo run -- apply -
 ```
 
 ## License

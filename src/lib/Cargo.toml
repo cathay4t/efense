@@ -16,6 +16,7 @@ time = { workspace = true }
 
 [dev-dependencies]
 serde_json = "1"
+serde_yaml = "0.9"
 
 [lib]
 path = "lib.rs"
